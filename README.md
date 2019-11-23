@@ -1,2 +1,2 @@
-# didactic-robot
+# helpful-bookworm
 Essays on AutoNLP.
