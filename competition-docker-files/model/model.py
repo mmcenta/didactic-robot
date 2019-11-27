@@ -31,7 +31,7 @@ set_session(sess)  # set this TensorFlow session as the default session for Kera
 EMBEDDINGS_DIR = "/app/embedding"
 MAX_SEQ_LENGTH = 500
 MAX_VOCAB_SIZE = 20000 # Limit on the number of features. We use the top 20K features
-NUM_EPOCHS_PER_TRAIN = 5
+NUM_EPOCHS_PER_TRAIN = 1
 BATCH_SIZE = 32
 
 
@@ -246,19 +246,19 @@ class Model(object):
         # If the model was not initialized
         if self.model is None:
             # Preprocess data
-            self.train_dataset, self.input_info = preprocess_training_data(train_dataset, metadata['language'])
+            self.train_dataset, self.input_info = preprocess_training_data(train_dataset, self.metadata['language'])
             vocab_size = self.input_info['vocab_size']
             input_length = self.input_info['max_sequence_length']
             num_classes = self.metadata['class_num']
 
             # Load pretrained embedding
             embedding_file = ''
-            if metadata['language'] == 'EN':
+            if self.metadata['language'] == 'EN':
                 embedding_file = 'cc.en.300.vec.gz'
             else:
                 embedding_file = 'cc.zh.300.vec.gz'
             word_index = self.input_info['tokenizer'].word_index
-            embedding_matrix = load_embedding(embedding_file, metadata['language'], word_index, vocab_size)
+            embedding_matrix = load_embedding(embedding_file, self.metadata['language'], word_index, vocab_size)
 
             # Initialize model
             model = emb_mlp_model(vocab_size,
@@ -281,14 +281,16 @@ class Model(object):
             self.initialized_model = True
 
         # Train model
+        print("Started training:")
         history = model.fit(
             self.train_dataset,
             epochs=NUM_EPOCHS_PER_TRAIN,
             callbacks=callbacks,
             validation_split=0.2,
-            verbose=2,  # Logs once per epoch.
             batch_size=BATCH_SIZE,
             shuffle=True)
+
+        self.done_training = True
 
     def test(self, x_test, remaining_time_budget=None):
         """
@@ -307,6 +309,7 @@ class Model(object):
             self.test_dataset = preprocess_test_data(x_test, self.metadata['language'], tokenizer)
 
         # Evaluate model
+        print("Started evaluation")
         result = model.predict_classes(self.test_dataset)
 
         # Convert to one hot encoding
