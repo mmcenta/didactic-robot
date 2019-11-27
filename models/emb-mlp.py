@@ -14,22 +14,10 @@ from keras import models
 from keras.layers import Dense
 from keras.layers import Dropout
 from keras.layers import Embedding
-from keras.layers import SeparableConv1D
-from keras.layers import MaxPooling1D
-from keras.initializers import Constant
-from keras.layers import MaxPooling2D
-from keras.layers import Flatten
 from keras.layers import GlobalAveragePooling1D
-from sklearn.utils import shuffle
-from sklearn.preprocessing import LabelEncoder
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.svm import LinearSVC
-from sklearn.feature_selection import SelectKBest
-from sklearn.feature_selection import f_classif
+from keras.initializers import Constant
 from keras.preprocessing import text
 from keras.preprocessing import sequence
-from keras.preprocessing import text
 
 
 from keras.backend.tensorflow_backend import set_session
@@ -43,6 +31,9 @@ set_session(sess)  # set this TensorFlow session as the default session for Kera
 EMBEDDINGS_DIR = "/app/embedding"
 MAX_SEQ_LENGTH = 500
 MAX_VOCAB_SIZE = 20000 # Limit on the number of features. We use the top 20K features
+NUM_EPOCHS_PER_TRAIN = 5
+BATCH_SIZE = 32
+
 
 # Functions to clean examples both in English and Chinese. Heavily inspired on the Baseline 2.
 # Code from https://towardsdatascience.com/multi-class-text-classification-with-lstm-1590bee1bd17
@@ -110,13 +101,33 @@ def preprocess_training_data(raw_data, language):
     # Pad the sequences to the maximum length
     sequences = sequence.pad_sequences(sequences, maxlen=max_sequence_length)
     
+    # Convert one hot encoding labels to categorical labels
+    labels = np.argmax(labels, axis=1)
+
+    # Create the a TensorFlow dataset from the sequences and labels
+    dataset = tf.data.Dataset.from_tensor_slices((sequences, labels))
+
     # Create an dictionary to hold additional information
     info = {}
     info['tokenizer'] = tokenizer
     info['vocab_size'] = min(len(tokenizer.word_index) + 1, MAX_VOCAB_SIZE)
     info['max_sequence_length'] = max_sequence_length
 
-    return (sequences, labels), info
+    return dataset, info
+
+
+def preprocess_test_data(examples, language, info):
+    # Clean examples' text
+    if language == 'EN':
+        examples = clean_en_examples(examples)
+    else:
+        examples = clean_zh_examples(examples)
+
+    # Tokenize and pad examples
+    sequences = info['tokenizer'].texts_to_sequences(examples)
+    sequences = sequence.pad_sequence(examples, maxlen=info['max_sequence_length'])
+
+    return sequences
 
 
 def load_embedding(embedding_file, language, word_index, vocab_size):
@@ -149,7 +160,7 @@ def load_embedding(embedding_file, language, word_index, vocab_size):
             if vector is not None:
                 embedding_matrix[i] = vector
             else:
-                # Words not found in the embedding will be assigned to 0 vectors
+                # Words not found in the embedding will be assigned to vectors of zeros
                 embedding_matrix[i] = np.zeros(300)
                 oov_count += 1
 
@@ -158,58 +169,38 @@ def load_embedding(embedding_file, language, word_index, vocab_size):
         return embedding_matrix
 
 
-def sep_cnn_model(input_shape,
+def emb_mlp_model(vocab_size,
+                  input_length,
                   num_classes,
-                  num_features,
                   embedding_matrix,
-                  blocks=1,
-                  filters=64,
-                  kernel_size=4,
+                  hidden_layer_units,
                   dropout_rate=0.5):
-    op_units, op_activation = _get_last_layer_units_and_activation(num_classes)
 
+    embedding_dim = embedding_matrix.shape[1]
+    
+    # Instantiate model and embedding layer
     model = models.Sequential()
-    model.add(Embedding(input_dim=num_features, output_dim=300, input_length=input_shape,
+    model.add(Embedding(input_dim=vocab_size, output_dim=embedding_dim, input_length=input_length,
                         embeddings_initializer=Constant(embedding_matrix)))
-
-    for _ in range(blocks - 1):
-        model.add(Dropout(rate=dropout_rate))
-        model.add(SeparableConv1D(filters=filters,
-                                  kernel_size=kernel_size,
-                                  activation='relu',
-                                  bias_initializer='random_uniform',
-                                  depthwise_initializer='random_uniform',
-                                  padding='same'))
-        model.add(SeparableConv1D(filters=filters,
-                                  kernel_size=kernel_size,
-                                  activation='relu',
-                                  bias_initializer='random_uniform',
-                                  depthwise_initializer='random_uniform',
-                                  padding='same'))
-        model.add(MaxPooling1D(pool_size=3))
-
-    model.add(SeparableConv1D(filters=filters * 2,
-                              kernel_size=kernel_size,
-                              activation='relu',
-                              bias_initializer='random_uniform',
-                              depthwise_initializer='random_uniform',
-                              padding='same'))
-    model.add(SeparableConv1D(filters=filters * 2,
-                              kernel_size=kernel_size,
-                              activation='relu',
-                              bias_initializer='random_uniform',
-                              depthwise_initializer='random_uniform',
-                              padding='same'))
-
+    
+    # Average the embeddings of all words per example
     model.add(GlobalAveragePooling1D())
-    # model.add(MaxPooling1D())
-    model.add(Dropout(rate=0.5))
-    model.add(Dense(op_units, activation=op_activation))
-    return model
 
-# One-hot encoding to category
-def ohe2cat(label):
-    return np.argmax(label, axis=1)
+    # Add the hidden layers
+    for num_units in range(hidden_layer_units):
+        model.add(Dropout(rate=dropout_rate))
+        model.add(Dense(num_units, activation='relu'))
+
+    # Add the final layer
+    last_units, last_activation = None, None
+    if num_classes == 2:
+        last_units, last_activation = 1, 'sigmoid'
+    else:
+        last_units, last_activation = num_classes, 'softmax'
+    model.add(Dropout(rate=dropout_rate))
+    model.add(Dense(last_units, activation=last_activation))
+
+    return model
 
 
 class Model(object):
@@ -232,17 +223,12 @@ class Model(object):
         self.train_output_path = train_output_path
         self.test_input_path = test_input_path
 
-        # Model
-        self.initialized_model = False
+        # Added attributes
+        self.input_info = None
         self.model = None
-
-        # Training data
-        self.train_sequences = None
-        self.train_labels = None
-
-        # Testing data
-        self.test_sequences = None
-        self.test_labels = None
+        self.callbacks = []
+        self.train_dataset = None
+        self.test_examples = None
 
     def train(self, train_dataset, remaining_time_budget=None):
         """model training on train_dataset.
@@ -258,10 +244,13 @@ class Model(object):
         if self.done_training:
             return
        
-        if not self.initialized_model:
+        # If the model was not initialized
+        if self.model is None:
             # Preprocess data
-            (self.train_sequences, self.train_labels), info = preprocess_training_data(train_dataset, metadata['language'])
-            vocab_size = info['vocab_size']
+            self.train_dataset, self.input_info = preprocess_training_data(train_dataset, metadata['language'])
+            vocab_size = self.input_info['vocab_size']
+            input_length = self.input_info['max_sequence_length']
+            num_classes = self.metadata['class_num']
 
             # Load pretrained embedding
             embedding_file = ''
@@ -269,52 +258,38 @@ class Model(object):
                 embedding_file = 'cc.en.300.vec.gz'
             else:
                 embedding_file = 'cc.zh.300.vec.gz'
-            embedding_matrix = load_embedding(embedding_file, metadata['language'], info['tokenizer'].word_index, vocab_size)
+            word_index = self.input_info['tokenizer'].word_index
+            embedding_matrix = load_embedding(embedding_file, metadata['language'], word_index, vocab_size)
 
             # Initialize model
-            model = sep_cnn_model(input_shape=x_train.shape[1:][0],
-                                  num_classes=num_classes,
-                                  num_features=num_features,
-                                  embedding_matrix=embedding_matrix,
-                                  blocks=2,
-                                  filters=64,
-                                  kernel_size=4,
-                                  dropout_rate=0.5)
+            model = emb_mlp_model(vocab_size,
+                                  input_length,
+                                  num_classes,
+                                  embedding_matrix,
+                                  hidden_layer_units=[300, 150, 75])
+
+            # Define optimizer and compile model
             if num_classes == 2:
                 loss = 'binary_crossentropy'
             else:
                 loss = 'sparse_categorical_crossentropy'
             optimizer = tf.keras.optimizers.Adam(lr=1e-3)
             model.compile(optimizer=optimizer, loss=loss, metrics=['acc'])
-            callbacks = [tf.keras.callbacks.EarlyStopping(
-                monitor='val_loss', patience=10)]
+            
+            # Define the callbacks used during training
+            self.callbacks.append(tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10))
 
             self.initialized_model = True
 
-        x_train, y_train = shuffle(x_train, y_train)
-        # fit model
+        # Train model
         history = model.fit(
-            x_train,
-            ohe2cat(y_train),
-            # y_train,
-            epochs=1000,
+            self.train_dataset,
+            epochs=NUM_EPOCHS_PER_TRAIN,
             callbacks=callbacks,
             validation_split=0.2,
-            # validation_data=(x_dev,y_dev),
             verbose=2,  # Logs once per epoch.
-            batch_size=32,
+            batch_size=BATCH_SIZE,
             shuffle=True)
-        print(str(type(x_train)) + " " + str(y_train.shape))
-
-        # save model
-        model.save(self.train_output_path + 'model.h5')
-        with open(self.train_output_path + 'tokenizer.pickle', 'wb') as handle:
-            pickle.dump(tokenizer, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(self.train_output_path + 'model.config', 'wb') as f:
-            f.write(str(max_length).encode())
-            f.close()
-
-        self.done_training = True
 
     def test(self, x_test, remaining_time_budget=None):
         """
@@ -325,29 +300,18 @@ class Model(object):
                  set and `class_num` is the same as the class_num in metadata. The
                  values should be binary or in the interval [0,1].
         """
-        model = models.load_model(self.test_input_path + 'model.h5')
-        with open(self.test_input_path + 'tokenizer.pickle', 'rb') as handle:
-            tokenizer = pickle.load(handle, encoding='iso-8859-1')
-        with open(self.test_input_path + 'model.config', 'r') as f:
-            max_length = int(f.read().strip())
-            f.close()
+        num_test, num_classes = self.metadata['test_num_instances'], self.metadata['class_num']
+        tokenizer = self.input_info['tokenizer']
+        max_length = self.input_info['max_sequence_length']
 
-        train_num, test_num = self.metadata['train_num'], self.metadata['test_num']
-        class_num = self.metadata['class_num']
+        if self.test_dataset is None:
+            self.test_dataset = preprocess_test_data(x_test, self.metadata['language'], tokenizer)
 
-        # tokenizing Chinese words
-        if self.metadata['language'] == 'ZH':
-            x_test = clean_zh_text(x_test)
-            x_test = list(map(_tokenize_chinese_words, x_test))
-        else:
-            x_test = clean_en_text(x_test)
+        # Evaluate model
+        result = model.predict_classes(self.test_dataset)
 
-        x_test = tokenizer.texts_to_sequences(x_test)
-        x_test = sequence.pad_sequences(x_test, maxlen=max_length)
-        result = model.predict_classes(x_test)
-
-        # category class list to sparse class list of lists
-        y_test = np.zeros([test_num, class_num])
+        # Convert to one hot encoding
+        y_test = np.zeros((num_test, num_classes))
         for idx, y in enumerate(result):
             y_test[idx][y] = 1
         return y_test
