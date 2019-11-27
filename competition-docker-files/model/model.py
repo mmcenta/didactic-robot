@@ -31,7 +31,7 @@ set_session(sess)  # set this TensorFlow session as the default session for Kera
 EMBEDDINGS_DIR = "/app/embedding"
 MAX_SEQ_LENGTH = 500
 MAX_VOCAB_SIZE = 20000 # Limit on the number of features. We use the top 20K features
-NUM_EPOCHS_PER_TRAIN = 1
+NUM_EPOCHS_PER_TRAIN = 5
 BATCH_SIZE = 32
 
 
@@ -136,37 +136,38 @@ def load_embedding(embedding_file, language, word_index, vocab_size):
 
     # Read file and construct lookup table
     with gzip.open(embedding_path, 'rb') as f:
-        embedding = {}
+        file_content = f.read()
+        
+    embedding = {}
 
-        for line in f.readlines():
-            values = line.strip().split()
-            if language == 'ZH':
-                word = values[0].decode('utf8')
-            else:
-                word = values[0]
-            vector = np.asarray(values[1:], dtype='float32')
-            embedding[word] = vector
+    for line in file_content:
+        values = line.strip().split()
+        if language == 'ZH':
+            word = values[0].decode('utf8')
+        else:
+            word = values[0]
+        vector = np.asarray(values[1:], dtype='float32')
+        embedding[word] = vector
 
-        print("Found {} fastText word vectors.".format(len(embedding)))
+    print("Found {} fastText word vectors.".format(len(embedding)))
 
-        # Build the embedding matrix of the passed vocab
-        embedding_dim = len(next(embedding.values()))
-        embedding_matrix = np.zeros((vocab_size, embedding_dim))
-        oov_count = 0
-        for word, i in word_index.items():
-            if i >= vocab_size:
-                continue
-            vector = embedding.get(word)
-            if vector is not None:
-                embedding_matrix[i] = vector
-            else:
-                # Words not found in the embedding will be assigned to vectors of zeros
-                embedding_matrix[i] = np.zeros(300)
-                oov_count += 1
+    # Build the embedding matrix of the passed vocab
+    embedding_dim = len(next(iter(embedding.values())))
+    embedding_matrix = np.zeros((vocab_size, embedding_dim))
+    oov_count = 0
+    for word, i in word_index.items():
+        if i >= vocab_size:
+            continue
+        vector = embedding.get(word)
+        if vector is not None:
+            embedding_matrix[i] = vector
+        else:
+            # Words not found in the embedding will be assigned to vectors of zeros
+            embedding_matrix[i] = np.zeros(300)
+            oov_count += 1
 
-        print ('Embedding out of vocabulary words: {}'.format(oov_count))
-
-        return embedding_matrix
+    print ('Embedding out of vocabulary words: {}'.format(oov_count))
+    return embedding_matrix
 
 
 def emb_mlp_model(vocab_size,
@@ -281,16 +282,14 @@ class Model(object):
             self.initialized_model = True
 
         # Train model
-        print("Started training:")
         history = model.fit(
             self.train_dataset,
             epochs=NUM_EPOCHS_PER_TRAIN,
             callbacks=callbacks,
             validation_split=0.2,
+            verbose=2,  # Logs once per epoch.
             batch_size=BATCH_SIZE,
             shuffle=True)
-
-        self.done_training = True
 
     def test(self, x_test, remaining_time_budget=None):
         """
@@ -309,7 +308,6 @@ class Model(object):
             self.test_dataset = preprocess_test_data(x_test, self.metadata['language'], tokenizer)
 
         # Evaluate model
-        print("Started evaluation")
         result = model.predict_classes(self.test_dataset)
 
         # Convert to one hot encoding
