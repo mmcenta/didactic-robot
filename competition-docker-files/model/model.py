@@ -296,7 +296,7 @@ class Model(object):
 
             # Tokenize and pad examples
             test_x = tokenizer.texts_to_sequences(test_x)
-            test_x = sequence.pad_sequence(test_x, maxlen=max_seq_length)
+            test_x = sequence.pad_sequences(test_x, maxlen=max_seq_length)
 
             self.test_x = test_x
 
