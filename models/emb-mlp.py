@@ -169,7 +169,7 @@ def emb_mlp_model(vocab_size,
     model.add(GlobalAveragePooling1D())
 
     # Add the hidden layers
-    for num_units in range(hidden_layer_units):
+    for num_units in hidden_layer_units:
         model.add(Dropout(rate=dropout_rate))
         model.add(Dense(num_units, activation='relu'))
 
