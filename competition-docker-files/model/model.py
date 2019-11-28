@@ -256,7 +256,7 @@ class Model(object):
                     # Words not found in the embedding will be assigned to vectors of zeros
                     embedding_matrix[i] = np.zeros(300)
                     oov_count += 1
-            print ('Embedding out of vocabulary words: {}'.format(oov_count))
+            print('Embedding out of vocabulary words: {}'.format(oov_count))
 
             # Initialize model
             model = emb_mlp_model(vocab_size,
@@ -282,7 +282,7 @@ class Model(object):
         history = model.fit(
             self.train_dataset,
             epochs=NUM_EPOCHS_PER_TRAIN,
-            callbacks=callbacks,
+            callbacks=self.callbacks,
             validation_split=0.2,
             verbose=2,  # Logs once per epoch.
             batch_size=BATCH_SIZE,
