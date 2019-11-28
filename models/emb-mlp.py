@@ -79,7 +79,7 @@ def preprocess_training_data(raw_data, language):
         A dictionary containing additional information on the preprocessing. It contains the following keys:
             'tokenizer': The preprocessing.text.Tokenizer object used to fit the examples.
             'vocab_size': The size of the vocabulary fitted on the examples.
-            'max_sequence_length': The maximum length of all sequences. 
+            'max_seq_length': The maximum length of all sequences. 
     """
     examples, labels = raw_data
 
@@ -95,12 +95,12 @@ def preprocess_training_data(raw_data, language):
     sequences = tokenizer.texts_to_sequences(examples)
 
     # Get the maximum length on these sequences
-    max_sequence_length = len(max(sequences, key=len))
-    if max_sequence_length > MAX_SEQ_LENGTH:
-        max_sequence_length = MAX_SEQ_LENGTH
+    max_seq_length = len(max(sequences, key=len))
+    if max_seq_length > MAX_SEQ_LENGTH:
+        max_seq_length = MAX_SEQ_LENGTH
     
     # Pad the sequences to the maximum length
-    sequences = sequence.pad_sequences(sequences, maxlen=max_sequence_length)
+    sequences = sequence.pad_sequences(sequences, maxlen=max_seq_length)
     
     # Convert one hot encoding labels to categorical labels
     labels = np.argmax(labels, axis=1)
@@ -109,23 +109,9 @@ def preprocess_training_data(raw_data, language):
     info = {}
     info['tokenizer'] = tokenizer
     info['vocab_size'] = min(len(tokenizer.word_index) + 1, MAX_VOCAB_SIZE)
-    info['max_sequence_length'] = max_sequence_length
+    info['max_seq_length'] = max_seq_length
 
     return (sequences, labels), info
-
-
-def preprocess_test_data(examples, language, info):
-    # Clean examples' text
-    if language == 'EN':
-        examples = clean_en_examples(examples)
-    else:
-        examples = clean_zh_examples(examples)
-
-    # Tokenize and pad examples
-    sequences = info['tokenizer'].texts_to_sequences(examples)
-    sequences = sequence.pad_sequence(examples, maxlen=info['max_sequence_length'])
-
-    return sequences
 
 
 def load_embedding(embedding_file, language):
@@ -236,7 +222,7 @@ class Model(object):
             # Preprocess data
             (self.train_x, self.train_y), self.input_info = preprocess_training_data(train_dataset, self.metadata['language'])
             vocab_size = self.input_info['vocab_size']
-            input_length = self.input_info['max_sequence_length']
+            input_length = self.input_info['max_seq_length']
             num_classes = self.metadata['class_num']
 
             # Build the embedding matrix of the passed vocab
@@ -287,7 +273,7 @@ class Model(object):
             batch_size=BATCH_SIZE,
             shuffle=True)
 
-    def test(self, x_test, remaining_time_budget=None):
+    def test(self, test_x, remaining_time_budget=None):
         """
         :param x_test: list of str, input test sentences.
         :param remaining_time_budget:
@@ -298,10 +284,21 @@ class Model(object):
         """
         num_test, num_classes = self.metadata['test_num'], self.metadata['class_num']
         tokenizer = self.input_info['tokenizer']
-        max_length = self.input_info['max_sequence_length']
+        max_seq_length = self.input_info['max_seq_length']
 
+        # Preprocess the data if not already preprocessed
         if self.test_x is None:
-            self.test_x = preprocess_test_data(x_test, self.metadata['language'], tokenizer)
+            # Clean examples' text
+            if self.metadata['language'] == 'EN':
+                test_x = clean_en_examples(test_x)
+            else:
+                test_x = clean_zh_examples(test_x)
+
+            # Tokenize and pad examples
+            test_x = tokenizer.texts_to_sequences(test_x)
+            test_x = sequence.pad_sequence(test_x, maxlen=max_seq_length)
+
+            self.test_x = test_x
 
         # Evaluate model
         result = model.predict_classes(self.test_dataset)
