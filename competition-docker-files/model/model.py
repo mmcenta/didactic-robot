@@ -257,6 +257,11 @@ class Model(object):
             model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
             
             self.model = model
+        else:
+            # Load model
+            model = models.load_model(self.test_input_path + 'model.h5')
+            with open(self.test_input_path + 'tokenizer.pickle', 'rb') as handle:
+                tokenizer = pickle.load(handle, encoding='iso-8859-1')
 
         # Train model
         history = model.fit(
@@ -283,6 +288,7 @@ class Model(object):
                  set and `class_num` is the same as the class_num in metadata. The
                  values should be binary or in the interval [0,1].
         """
+        # Load model
         model = models.load_model(self.test_input_path + 'model.h5')
         with open(self.test_input_path + 'tokenizer.pickle', 'rb') as handle:
             tokenizer = pickle.load(handle, encoding='iso-8859-1')
