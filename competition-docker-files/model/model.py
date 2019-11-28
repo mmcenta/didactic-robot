@@ -15,6 +15,7 @@ from keras.layers import Dense
 from keras.layers import Dropout
 from keras.layers import Embedding
 from keras.layers import GlobalAveragePooling1D
+from keras.optimizers import Adam
 from keras.initializers import Constant
 from keras.preprocessing import text
 from keras.preprocessing import sequence
@@ -269,7 +270,7 @@ class Model(object):
                 loss = 'binary_crossentropy'
             else:
                 loss = 'sparse_categorical_crossentropy'
-            optimizer = tf.keras.optimizers.Adam(lr=1e-3)
+            optimizer = Adam(lr=1e-3)
             model.compile(optimizer=optimizer, loss=loss, metrics=['acc'])
             
             # Define the callbacks used during training
