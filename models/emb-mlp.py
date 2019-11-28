@@ -235,7 +235,7 @@ class Model(object):
         # If the model was not initialized
         if self.model is None:
             # Preprocess data
-            self.train_dataset, self.input_info = preprocess_training_data(train_dataset, metadata['language'])
+            self.train_dataset, self.input_info = preprocess_training_data(train_dataset, self.metadata['language'])
             vocab_size = self.input_info['vocab_size']
             input_length = self.input_info['max_sequence_length']
             num_classes = self.metadata['class_num']
