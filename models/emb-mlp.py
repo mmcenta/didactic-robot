@@ -246,7 +246,7 @@ class Model(object):
                                        input_length,
                                        num_classes,
                                        embedding_matrix,
-                                       hidden_layer_units=[300, 150, 75])
+                                       hidden_layer_units=[1000])
 
             # Define optimizer and compile model
             if num_classes == 2:
