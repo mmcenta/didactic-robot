@@ -130,44 +130,25 @@ def preprocess_test_data(examples, language, info):
     return sequences
 
 
-def load_embedding(embedding_file, language, word_index, vocab_size):
+def load_embedding(embedding_file, language):
     # Load pretrained embedding
     embedding_path = os.path.join(EMBEDDINGS_DIR, embedding_file)
 
     # Read file and construct lookup table
     with gzip.open(embedding_path, 'rb') as f:
-        file_content = f.read()
-        
-    embedding = {}
+        embedding = {}
 
-    for line in file_content:
-        values = line.strip().split()
-        if language == 'ZH':
-            word = values[0].decode('utf8')
-        else:
-            word = values[0]
-        vector = np.asarray(values[1:], dtype='float32')
-        embedding[word] = vector
+        for line in f.readlines():
+            values = line.strip().split()
+            if language == 'ZH':
+                word = values[0].decode('utf8')
+            else:
+                word = values[0]
+            vector = np.asarray(values[1:], dtype='float32')
+            embedding[word] = vector
 
-    print("Found {} fastText word vectors.".format(len(embedding)))
-
-    # Build the embedding matrix of the passed vocab
-    embedding_dim = len(next(iter(embedding.values())))
-    embedding_matrix = np.zeros((vocab_size, embedding_dim))
-    oov_count = 0
-    for word, i in word_index.items():
-        if i >= vocab_size:
-            continue
-        vector = embedding.get(word)
-        if vector is not None:
-            embedding_matrix[i] = vector
-        else:
-            # Words not found in the embedding will be assigned to vectors of zeros
-            embedding_matrix[i] = np.zeros(300)
-            oov_count += 1
-
-    print ('Embedding out of vocabulary words: {}'.format(oov_count))
-    return embedding_matrix
+        print("Found {} fastText word vectors for language {}.".format(len(embedding), language))
+        return embedding
 
 
 def emb_mlp_model(vocab_size,
@@ -231,6 +212,13 @@ class Model(object):
         self.train_dataset = None
         self.test_examples = None
 
+        # Load embeddings
+        self.embedding = None
+        if metadata['language'] == 'EN':
+            self.embedding = load_embedding('cc.en.300.vec.gz', 'EN')
+        else:
+            self.embedding = load_embedding('cc.zh.300.vec.gz', 'ZH')
+
     def train(self, train_dataset, remaining_time_budget=None):
         """model training on train_dataset.
         
@@ -247,19 +235,27 @@ class Model(object):
         # If the model was not initialized
         if self.model is None:
             # Preprocess data
-            self.train_dataset, self.input_info = preprocess_training_data(train_dataset, self.metadata['language'])
+            self.train_dataset, self.input_info = preprocess_training_data(train_dataset, metadata['language'])
             vocab_size = self.input_info['vocab_size']
             input_length = self.input_info['max_sequence_length']
             num_classes = self.metadata['class_num']
 
-            # Load pretrained embedding
-            embedding_file = ''
-            if self.metadata['language'] == 'EN':
-                embedding_file = 'cc.en.300.vec.gz'
-            else:
-                embedding_file = 'cc.zh.300.vec.gz'
+            # Build the embedding matrix of the passed vocab
             word_index = self.input_info['tokenizer'].word_index
-            embedding_matrix = load_embedding(embedding_file, self.metadata['language'], word_index, vocab_size)
+            embedding_dim = len(next(self.embedding.values()))
+            embedding_matrix = np.zeros((vocab_size, embedding_dim))
+            oov_count = 0
+            for word, i in word_index.items():
+                if i >= vocab_size:
+                    continue
+                vector = self.embedding.get(word)
+                if vector is not None:
+                    embedding_matrix[i] = vector
+                else:
+                    # Words not found in the embedding will be assigned to vectors of zeros
+                    embedding_matrix[i] = np.zeros(300)
+                    oov_count += 1
+            print ('Embedding out of vocabulary words: {}'.format(oov_count))
 
             # Initialize model
             model = emb_mlp_model(vocab_size,
@@ -315,4 +311,3 @@ class Model(object):
         for idx, y in enumerate(result):
             y_test[idx][y] = 1
         return y_test
-
