@@ -269,7 +269,7 @@ class Model(object):
             else:
                 loss = 'sparse_categorical_crossentropy'
             optimizer = Adam(lr=1e-3)
-            model.compile(optimizer=optimizer, loss=loss, metrics=['acc'])
+            model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
             
             # Define the callbacks used during training
             self.callbacks.append(tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10))
@@ -296,7 +296,7 @@ class Model(object):
                  set and `class_num` is the same as the class_num in metadata. The
                  values should be binary or in the interval [0,1].
         """
-        num_test, num_classes = self.metadata['test_num_instances'], self.metadata['class_num']
+        num_test, num_classes = self.metadata['num_test_instances'], self.metadata['class_num']
         tokenizer = self.input_info['tokenizer']
         max_length = self.input_info['max_sequence_length']
 
