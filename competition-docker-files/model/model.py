@@ -15,7 +15,7 @@ from keras.layers import Dense
 from keras.layers import Dropout
 from keras.layers import Embedding
 from keras.layers import GlobalAveragePooling1D
-from keras.optimizers import Adam
+from keras.optimizers import Adagrad
 from keras.initializers import Constant
 from keras.preprocessing import text
 from keras.preprocessing import sequence
@@ -253,7 +253,7 @@ class Model(object):
                 loss = 'binary_crossentropy'
             else:
                 loss = 'sparse_categorical_crossentropy'
-            optimizer = Adam(lr=1e-3)
+            optimizer = Adagrad()
             model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
             
             self.model = model
@@ -306,7 +306,7 @@ class Model(object):
         test_x = sequence.pad_sequences(test_x, maxlen=max_seq_length)
 
         # Evaluate model
-        result = model.predict_classes(self.test_x)
+        result = model.predict_classes(test_x)
 
         # Convert to one hot encoding
         y_test = np.zeros((num_test, num_classes))
