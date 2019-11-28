@@ -194,8 +194,8 @@ class Model(object):
         :param metadata: a dict formed like:
             {"class_num": 10,
              "language": ZH,
-             "num_train_instances": 10000,
-             "num_test_instances": 1000,
+             "train_num": 10000,
+             "test_num": 1000,
              "time_budget": 300}
         """
         self.done_training = False
@@ -296,7 +296,7 @@ class Model(object):
                  set and `class_num` is the same as the class_num in metadata. The
                  values should be binary or in the interval [0,1].
         """
-        num_test, num_classes = self.metadata['num_test_instances'], self.metadata['class_num']
+        num_test, num_classes = self.metadata['test_num'], self.metadata['class_num']
         tokenizer = self.input_info['tokenizer']
         max_length = self.input_info['max_sequence_length']
 
