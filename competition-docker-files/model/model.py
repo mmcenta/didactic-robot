@@ -32,7 +32,7 @@ set_session(sess)  # set this TensorFlow session as the default session for Kera
 EMBEDDINGS_DIR = "/app/embedding"
 MAX_SEQ_LENGTH = 500
 MAX_VOCAB_SIZE = 20000 # Limit on the number of features. We use the top 20K features
-NUM_EPOCHS_PER_TRAIN = 100
+NUM_EPOCHS_PER_TRAIN = 2
 BATCH_SIZE = 32
 
 
@@ -195,7 +195,6 @@ class Model(object):
         self.callbacks = []
         self.train_x = None
         self.train_y = None
-        self.test_x = None
 
         # Load embeddings
         self.embedding = None
@@ -257,9 +256,6 @@ class Model(object):
             optimizer = Adam(lr=1e-3)
             model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
             
-            # Define the callbacks used during training
-            self.callbacks.append(tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10))
-
             self.model = model
 
         # Train model
@@ -293,19 +289,15 @@ class Model(object):
         num_test, num_classes = self.metadata['test_num'], self.metadata['class_num']
         max_seq_length = self.input_info['max_seq_length']
 
-        # Preprocess the data if not already preprocessed
-        if self.test_x is None:
-            # Clean examples' text
-            if self.metadata['language'] == 'EN':
-                test_x = clean_en_examples(test_x)
-            else:
-                test_x = clean_zh_examples(test_x)
+        # Clean examples' text
+        if self.metadata['language'] == 'EN':
+            test_x = clean_en_examples(test_x)
+        else:
+            test_x = clean_zh_examples(test_x)
 
-            # Tokenize and pad examples
-            test_x = tokenizer.texts_to_sequences(test_x)
-            test_x = sequence.pad_sequences(test_x, maxlen=max_seq_length)
-
-            self.test_x = test_x
+        # Tokenize and pad examples
+        test_x = tokenizer.texts_to_sequences(test_x)
+        test_x = sequence.pad_sequences(test_x, maxlen=max_seq_length)
 
         # Evaluate model
         result = model.predict_classes(self.test_x)
