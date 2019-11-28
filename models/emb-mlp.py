@@ -32,7 +32,7 @@ set_session(sess)  # set this TensorFlow session as the default session for Kera
 EMBEDDINGS_DIR = "/app/embedding"
 MAX_SEQ_LENGTH = 500
 MAX_VOCAB_SIZE = 20000 # Limit on the number of features. We use the top 20K features
-NUM_EPOCHS_PER_TRAIN = 5
+NUM_EPOCHS_PER_TRAIN = 100
 BATCH_SIZE = 32
 
 
@@ -243,7 +243,7 @@ class Model(object):
             print('Embedding out of vocabulary words: {}'.format(oov_count))
 
             # Initialize model
-            self.model = emb_mlp_model(vocab_size,
+            model = emb_mlp_model(vocab_size,
                                        input_length,
                                        num_classes,
                                        embedding_matrix,
@@ -255,15 +255,15 @@ class Model(object):
             else:
                 loss = 'sparse_categorical_crossentropy'
             optimizer = Adam(lr=1e-3)
-            self.model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
+            model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
             
             # Define the callbacks used during training
             self.callbacks.append(tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10))
 
-            self.initialized_model = True
+            self.model = model
 
         # Train model
-        history = self.model.fit(
+        history = model.fit(
             x=self.train_x,
             y=self.train_y,
             epochs=NUM_EPOCHS_PER_TRAIN,
@@ -272,6 +272,11 @@ class Model(object):
             verbose=2,  # Logs once per epoch.
             batch_size=BATCH_SIZE,
             shuffle=True)
+            
+        # Save model
+        model.save(self.train_output_path + 'model.h5')
+        with open(self.train_output_path + 'tokenizer.pickle', 'wb') as handle:
+            pickle.dump(self.input_info['tokenizer'], handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def test(self, test_x, remaining_time_budget=None):
         """
@@ -282,8 +287,10 @@ class Model(object):
                  set and `class_num` is the same as the class_num in metadata. The
                  values should be binary or in the interval [0,1].
         """
+        model = models.load_model(self.test_input_path + 'model.h5')
+        with open(self.test_input_path + 'tokenizer.pickle', 'rb') as handle:
+            tokenizer = pickle.load(handle, encoding='iso-8859-1')
         num_test, num_classes = self.metadata['test_num'], self.metadata['class_num']
-        tokenizer = self.input_info['tokenizer']
         max_seq_length = self.input_info['max_seq_length']
 
         # Preprocess the data if not already preprocessed
@@ -301,7 +308,7 @@ class Model(object):
             self.test_x = test_x
 
         # Evaluate model
-        result = self.model.predict_classes(self.test_x)
+        result = model.predict_classes(self.test_x)
 
         # Convert to one hot encoding
         y_test = np.zeros((num_test, num_classes))
