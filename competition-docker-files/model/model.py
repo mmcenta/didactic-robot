@@ -301,7 +301,7 @@ class Model(object):
             self.test_x = test_x
 
         # Evaluate model
-        result = model.predict_classes(self.test_dataset)
+        result = self.model.predict_classes(self.test_x)
 
         # Convert to one hot encoding
         y_test = np.zeros((num_test, num_classes))
