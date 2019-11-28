@@ -243,11 +243,11 @@ class Model(object):
             print('Embedding out of vocabulary words: {}'.format(oov_count))
 
             # Initialize model
-            model = emb_mlp_model(vocab_size,
-                                  input_length,
-                                  num_classes,
-                                  embedding_matrix,
-                                  hidden_layer_units=[300, 150, 75])
+            self.model = emb_mlp_model(vocab_size,
+                                       input_length,
+                                       num_classes,
+                                       embedding_matrix,
+                                       hidden_layer_units=[300, 150, 75])
 
             # Define optimizer and compile model
             if num_classes == 2:
@@ -255,7 +255,7 @@ class Model(object):
             else:
                 loss = 'sparse_categorical_crossentropy'
             optimizer = Adam(lr=1e-3)
-            model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
+            self.model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
             
             # Define the callbacks used during training
             self.callbacks.append(tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10))
@@ -263,7 +263,7 @@ class Model(object):
             self.initialized_model = True
 
         # Train model
-        history = model.fit(
+        history = self.model.fit(
             x=self.train_x,
             y=self.train_y,
             epochs=NUM_EPOCHS_PER_TRAIN,
