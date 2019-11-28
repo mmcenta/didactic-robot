@@ -242,7 +242,7 @@ class Model(object):
 
             # Build the embedding matrix of the passed vocab
             word_index = self.input_info['tokenizer'].word_index
-            embedding_dim = len(next(self.embedding.values()))
+            embedding_dim = len(next(iter(self.embedding.values())))
             embedding_matrix = np.zeros((vocab_size, embedding_dim))
             oov_count = 0
             for word, i in word_index.items():
