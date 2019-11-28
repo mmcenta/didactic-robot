@@ -105,16 +105,13 @@ def preprocess_training_data(raw_data, language):
     # Convert one hot encoding labels to categorical labels
     labels = np.argmax(labels, axis=1)
 
-    # Create the a TensorFlow dataset from the sequences and labels
-    dataset = tf.data.Dataset.from_tensor_slices((sequences, labels))
-
     # Create an dictionary to hold additional information
     info = {}
     info['tokenizer'] = tokenizer
     info['vocab_size'] = min(len(tokenizer.word_index) + 1, MAX_VOCAB_SIZE)
     info['max_sequence_length'] = max_sequence_length
 
-    return dataset, info
+    return (sequences, labels), info
 
 
 def preprocess_test_data(examples, language, info):
@@ -210,8 +207,9 @@ class Model(object):
         self.input_info = None
         self.model = None
         self.callbacks = []
-        self.train_dataset = None
-        self.test_examples = None
+        self.train_x = None
+        self.train_y = None
+        self.test_x = None
 
         # Load embeddings
         self.embedding = None
@@ -236,7 +234,7 @@ class Model(object):
         # If the model was not initialized
         if self.model is None:
             # Preprocess data
-            self.train_dataset, self.input_info = preprocess_training_data(train_dataset, self.metadata['language'])
+            (self.train_x, self.train_y), self.input_info = preprocess_training_data(train_dataset, self.metadata['language'])
             vocab_size = self.input_info['vocab_size']
             input_length = self.input_info['max_sequence_length']
             num_classes = self.metadata['class_num']
@@ -280,7 +278,8 @@ class Model(object):
 
         # Train model
         history = model.fit(
-            self.train_dataset,
+            x=self.train_x,
+            y=self.train_y,
             epochs=NUM_EPOCHS_PER_TRAIN,
             callbacks=self.callbacks,
             validation_split=0.2,
@@ -301,8 +300,8 @@ class Model(object):
         tokenizer = self.input_info['tokenizer']
         max_length = self.input_info['max_sequence_length']
 
-        if self.test_dataset is None:
-            self.test_dataset = preprocess_test_data(x_test, self.metadata['language'], tokenizer)
+        if self.test_x is None:
+            self.test_x = preprocess_test_data(x_test, self.metadata['language'], tokenizer)
 
         # Evaluate model
         result = model.predict_classes(self.test_dataset)
