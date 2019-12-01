@@ -152,6 +152,9 @@ class Model(object):
         self.metadata = metadata
         self.train_output_path = train_output_path
         self.test_input_path = test_input_path
+        self.x_train = None
+        self.y_train = None
+        self.x_test = None
 
         # Initialize model
         self.model, vocab, do_lowercase = get_bert_classifier(metadata['class_num'],
