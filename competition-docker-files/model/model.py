@@ -11,13 +11,14 @@ import numpy as np
 import sys, getopt
 import tensorflow as tf
 import tensorflow_hub as hub
-from keras import models
-from keras.layers import Input
-from keras.layers import Dense
-from keras.optimizers import Adam
-from keras.initializers import Constant
-from keras.preprocessing import text
-from keras.preprocessing import sequence
+from tensorflow.keras import models
+from tensorflow.keras import models
+from tensorflow.keras.layers import Input
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.initializers import Constant
+from tensorflow.keras.preprocessing import text
+from tensorflow.keras.preprocessing import sequence
 
 from bert_tokenization import FullTokenizer
 
@@ -29,6 +30,8 @@ config.log_device_placement = True  # to log device placement (on which device t
                                     # (nothing gets printed in Jupyter, only if you run it standalone)
 sess = tf.Session(config=config)
 set_session(sess)  # set this TensorFlow session as the default session for Keras
+
+print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 
 BERT_EN_URL = "https://tfhub.dev/tensorflow/bert_en_uncased_L-12_H-768_A-12/1"
 BERT_ZH_URL = "https://tfhub.dev/tensorflow/bert_zh_L-12_H-768_A-12/1"
