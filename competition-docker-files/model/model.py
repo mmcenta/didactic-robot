@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 import os
 import gzip
 import argparse
@@ -5,7 +8,6 @@ import time
 import re
 import jieba
 import pickle
-import keras
 import tensorflow as tf
 import numpy as np
 import sys, getopt
@@ -119,7 +121,7 @@ def get_bert_classifier(num_classes, language):
     classifier_layer = Dense(num_classes, activation='softmax')
     predictions = classifier_layer(seq_output)
 
-    model = keras.Model(input=inputs, outputs=predictions, name='bert-classifier')
+    model = tf.keras.Model(input=inputs, outputs=predictions, name='bert-classifier')
 
     # Compile model
     optimizer = Adam(amsgrad=True)
