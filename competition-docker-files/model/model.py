@@ -14,7 +14,7 @@ import tensorflow_hub as hub
 from keras import models
 from keras.layers import Input
 from keras.layers import Dense
-from keras.optimizers import Adagrad
+from keras.optimizers import Adam
 from keras.initializers import Constant
 from keras.preprocessing import text
 from keras.preprocessing import sequence
@@ -118,6 +118,10 @@ def get_bert_classifier(num_classes, language):
 
     model = keras.Model(input=inputs, outputs=predictions, name='bert-classifier')
 
+    # Compile model
+    optimizer = Adam(amsgrad=True)
+    model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+
     # Get model vocabulary and lowercase flag (for the tokenizer)
     vocab = bert_layer.resolved_object.vocab_file.asset_path.numpy()
     do_lowercase = bert_layer.resolved_object.do_lower_case.numpy()
@@ -145,7 +149,7 @@ class Model(object):
         self.train_output_path = train_output_path
         self.test_input_path = test_input_path
 
-        # Initialize model and tokenizer
+        # Initialize model
         self.model, vocab, do_lowercase = get_bert_classifier(metadata['class_num'],
                                                               metadata['language'])
         self.tokenizer = FullTokenizer(vocab, do_lowercase)
