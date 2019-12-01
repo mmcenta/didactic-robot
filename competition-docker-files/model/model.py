@@ -19,7 +19,7 @@ from keras.initializers import Constant
 from keras.preprocessing import text
 from keras.preprocessing import sequence
 
-from .bert_tokenization import FullTokenizer
+from bert_tokenization import FullTokenizer
 
 
 from keras.backend.tensorflow_backend import set_session
