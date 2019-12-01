@@ -172,15 +172,16 @@ class Model(object):
         """
         if self.done_training:
             return
-        x_train, y_train = train_dataset
-
-        # Preprocess data
-        x_train = preprocess_examples(x_train, self.tokenizer, self.metadata['language'])
+        if self.x_train is None:
+            # If the preprocessed training data is not cached, preprocess it
+            x_train, y_train = train_dataset
+            x_train = preprocess_examples(x_train, self.tokenizer, self.metadata['language'])
+            self.x_train, self.y_train = x_train, y_train
 
         # Train model
         history = self.model.fit(
-                    x=self.train_x,
-                    y=self.train_y,
+                    x=self.x_train,
+                    y=self.y_train,
                     epochs=NUM_EPOCHS_PER_TRAIN,
                     validation_split=0.2,
                     verbose=2,  # Logs once per epoch.
