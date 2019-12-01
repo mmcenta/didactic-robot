@@ -121,7 +121,7 @@ def get_bert_classifier(num_classes, language):
     classifier_layer = Dense(num_classes, activation='softmax')
     predictions = classifier_layer(seq_output)
 
-    model = tf.keras.Model(input=inputs, outputs=predictions, name='bert-classifier')
+    model = tf.keras.Model(inputs=inputs, outputs=predictions, name='bert-classifier')
 
     # Compile model
     optimizer = Adam(amsgrad=True)
