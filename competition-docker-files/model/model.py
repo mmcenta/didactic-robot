@@ -88,7 +88,9 @@ def preprocess_examples(examples, tokenizer, language):
         examples = clean_zh_examples(examples)
 
     # Apply tokenizer to text
-    sequences = tokenizer.tokenize(examples)
+    sequences = []
+    for example in examples:
+        sequences.append(tokenizer.convert_tokens_to_ids(tokenizer.tokenize(example)))
 
     # Pad the sequences to the maximum length
     sequences = sequence.pad_sequences(sequences, maxlen=MAX_SEQ_LENGTH)
