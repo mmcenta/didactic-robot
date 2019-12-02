@@ -32,7 +32,7 @@ set_session(sess)  # set this TensorFlow session as the default session for Kera
 EMBEDDINGS_DIR = "/app/embedding"
 MAX_SEQ_LENGTH = 500
 MAX_VOCAB_SIZE = 20000 # Limit on the number of features. We use the top 20K features
-NUM_EPOCHS_PER_TRAIN = 2
+NUM_EPOCHS_PER_TRAIN = 1
 BATCH_SIZE = 32
 
 
