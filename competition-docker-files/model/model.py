@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
+import pandas as pd
 import os
 import gzip
 import argparse
@@ -11,28 +9,30 @@ import pickle
 import tensorflow as tf
 import numpy as np
 import sys, getopt
-import tensorflow as tf
-import tensorflow_hub as hub
-from tensorflow.keras import models
-from tensorflow.keras.layers import Input, Dense, Dropout
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.initializers import Constant
-from tensorflow.keras.preprocessing import text, sequence
+from subprocess import check_output
+from keras import models
+from keras.layers import Dense
+from keras.layers import Dropout
+from keras.layers import Embedding
+from keras.layers import GlobalAveragePooling1D
+from keras.optimizers import Adagrad
+from keras.initializers import Constant
+from keras.preprocessing import text
+from keras.preprocessing import sequence
 
-from bert_tokenization import FullTokenizer
 
+from keras.backend.tensorflow_backend import set_session
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True  # dynamically grow the memory used on the GPU
-config.log_device_placement = False  # to log device placement (on which device the operation ran)
-                                     # (becomes difficult to follow on BERT)
-tf.enable_eager_execution(config=config)
+config.log_device_placement = True  # to log device placement (on which device the operation ran)
+                                    # (nothing gets printed in Jupyter, only if you run it standalone)
+sess = tf.Session(config=config)
+set_session(sess)  # set this TensorFlow session as the default session for Keras
 
-print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-
-BERT_EN_URL = "https://tfhub.dev/tensorflow/bert_en_uncased_L-12_H-768_A-12/1"
-BERT_ZH_URL = "https://tfhub.dev/tensorflow/bert_zh_L-12_H-768_A-12/1"
+EMBEDDINGS_DIR = "/app/embedding"
 MAX_SEQ_LENGTH = 500
-NUM_EPOCHS_PER_TRAIN = 1
+MAX_VOCAB_SIZE = 20000 # Limit on the number of features. We use the top 20K features
+NUM_EPOCHS_PER_TRAIN = 2
 BATCH_SIZE = 32
 
 
@@ -65,90 +65,108 @@ def clean_zh_examples(examples):
     return cleaned
 
 
-def get_mask(tokens):
-    """Mask for padding"""
-    if len(tokens) > MAX_SEQ_LENGTH:
-        return np.ones(MAX_SEQ_LENGTH)
-    return np.array([1] * len(tokens) + [0] * (MAX_SEQ_LENGTH - len(tokens)))
+def preprocess_training_data(raw_data, language):
+    """Preprocesses training data in both English and Chinese.
 
-
-def get_ids(tokens, tokenizer):
-    """Token ids from Tokenizer vocab"""
-    token_ids = tokenizer.convert_tokens_to_ids(tokens)
-    if len(token_ids) > MAX_SEQ_LENGTH:
-        input_ids = token_ids[:MAX_SEQ_LENGTH]
-    else:
-        input_ids = token_ids + [0] * (MAX_SEQ_LENGTH - len(token_ids))
-    return np.array(input_ids)
-
-
-def preprocess_text(instances, tokenizer, language):
-    """Preprocesses data in both English and Chinese.
-
-    This functions first cleans the text data, then applies the received tokenizer on the cleaned examples.
+    This functions first cleans the text data, then fits a tokenizer on the cleaned examples.
 
     Args:
-        raw_data: A tensor of examples.
-        tokenizer: The tokenizer that will be applied to the cleaned text.
+        raw_data: A tuple of (examples, labels) on which the model will train.
         language: The language of the text. 'EN' for English and 'ZN' for Chinese.
 
     Returns:
-        The sequences corresponding to the tokenization of the cleaned text padded to MAX_SEQ_LENGTH.
+        A tuple of (sequences, labels) in which sequences are the preprocessed examples.
+        A dictionary containing additional information on the preprocessing. It contains the following keys:
+            'tokenizer': The preprocessing.text.Tokenizer object used to fit the examples.
+            'vocab_size': The size of the vocabulary fitted on the examples.
+            'max_seq_length': The maximum length of all sequences. 
     """
-    # Clean text
+    examples, labels = raw_data
+
+    # Clean examples' text
     if language == 'EN':
-        instances = clean_en_examples(instances)
+        examples = clean_en_examples(examples)
     else:
-        instances = clean_zh_examples(instances)
+        examples = clean_zh_examples(examples)
 
-    # Apply tokenizer to text
-    input_word_ids = []
-    input_masks = []
-    segment_ids = []
-    for instance in instances:
-        tokens = tokenizer.tokenize(instance)
-        tokens = ["[CLS]"] + tokens + ["[SEP]"]
-        input_masks.append(get_mask(tokens))
-        segment_ids.append(np.zeros(MAX_SEQ_LENGTH))
-        input_word_ids.append(get_ids(tokens, tokenizer))
+    # Create a tokenizer on the examples corpus
+    tokenizer = text.Tokenizer(num_words=MAX_VOCAB_SIZE)
+    tokenizer.fit_on_texts(examples)
+    sequences = tokenizer.texts_to_sequences(examples)
+
+    # Get the maximum length on these sequences
+    max_seq_length = len(max(sequences, key=len))
+    if max_seq_length > MAX_SEQ_LENGTH:
+        max_seq_length = MAX_SEQ_LENGTH
     
-    return [input_word_ids, input_masks, segment_ids]
+    # Pad the sequences to the maximum length
+    sequences = sequence.pad_sequences(sequences, maxlen=max_seq_length)
+    
+    # Convert one hot encoding labels to categorical labels
+    labels = np.argmax(labels, axis=1)
+
+    # Create an dictionary to hold additional information
+    info = {}
+    info['tokenizer'] = tokenizer
+    info['vocab_size'] = min(len(tokenizer.word_index) + 1, MAX_VOCAB_SIZE)
+    info['max_seq_length'] = max_seq_length
+
+    return (sequences, labels), info
 
 
-def get_bert_classifier(num_classes, language, dropout_rate=0.5):
-    """Returns a BERT-based classifier using Keras Functional API"""
+def load_embedding(embedding_file, language):
+    # Load pretrained embedding
+    embedding_path = os.path.join(EMBEDDINGS_DIR, embedding_file)
 
-    # Create the Input objects
-    input_word_ids = Input(shape=(MAX_SEQ_LENGTH,), dtype=tf.int32, name="input_word_ids")
-    input_mask = Input(shape=(MAX_SEQ_LENGTH,), dtype=tf.int32, name="input_mask")
-    segment_ids = Input(shape=(MAX_SEQ_LENGTH,), dtype=tf.int32, name="segment_ids")
-    inputs = [input_word_ids, input_mask, segment_ids]
+    # Read file and construct lookup table
+    with gzip.open(embedding_path, 'rb') as f:
+        embedding = {}
 
-    # Download the correct version of BERT
-    if language == 'EN': 
-        bert_layer = hub.KerasLayer(BERT_EN_URL, trainable=False)
+        for line in f.readlines():
+            values = line.strip().split()
+            if language == 'ZH':
+                word = values[0].decode('utf8')
+            else:
+                word = values[0]
+            vector = np.asarray(values[1:], dtype='float32')
+            embedding[word] = vector
+
+        print("Found {} fastText word vectors for language {}.".format(len(embedding), language))
+        return embedding
+
+
+def emb_mlp_model(vocab_size,
+                  input_length,
+                  num_classes,
+                  embedding_matrix,
+                  hidden_layer_units,
+                  dropout_rate=0.5):
+
+    embedding_dim = embedding_matrix.shape[1]
+    
+    # Instantiate model and embedding layer
+    model = models.Sequential()
+    model.add(Embedding(input_dim=vocab_size, output_dim=embedding_dim, input_length=input_length,
+                        embeddings_initializer=Constant(embedding_matrix)))
+    
+    # Average the embeddings of all words per example
+    model.add(GlobalAveragePooling1D())
+
+    # Add the hidden layers
+    for num_units in hidden_layer_units:
+        model.add(Dropout(rate=dropout_rate))
+        model.add(Dense(num_units, activation='relu'))
+
+    # Add the final layer
+    last_units, last_activation = None, None
+    if num_classes == 2:
+        last_units, last_activation = 1, 'sigmoid'
     else:
-        bert_layer = hub.KerasLayer(BERT_ZH_URL, trainable=False)
+        last_units, last_activation = num_classes, 'softmax'
+    model.add(Dropout(rate=dropout_rate))
+    model.add(Dense(last_units, activation=last_activation))
 
-    # Apply the BERT layer and the dropout
-    text_features, _ = bert_layer(inputs)
-    text_features = Dropout(rate=dropout_rate)(text_features)
-
-    # Apply the classifier layer
-    predictions = Dense(num_classes, activation='softmax')(text_features)
-
-    # Define the model
-    model = tf.keras.Model(inputs=inputs, outputs=predictions, name='bert-classifier')
-
-    # Compile model
-    optimizer = Adam(amsgrad=True)
-    model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
-
-    # Get model vocabulary and lowercase flag (for the tokenizer)
-    vocab = bert_layer.resolved_object.vocab_file.asset_path.numpy()
-    do_lowercase = bert_layer.resolved_object.do_lower_case.numpy()
-
-    return model, vocab, do_lowercase
+    return model
 
 
 class Model(object):
@@ -170,17 +188,20 @@ class Model(object):
         self.metadata = metadata
         self.train_output_path = train_output_path
         self.test_input_path = test_input_path
-        self.x_train = None
-        self.y_train = None
-        self.x_test = None
 
-        # Initialize model
-        self.model, vocab, do_lowercase = get_bert_classifier(metadata['class_num'],
-                                                              metadata['language'])
-        self.tokenizer = FullTokenizer(vocab, do_lowercase)
-        self.input_mask = tf.zeros((MAX_SEQ_LENGTH,))
-        self.segment_ids = tf.zeros((MAX_SEQ_LENGTH,))
-        
+        # Added attributes
+        self.input_info = None
+        self.model = None
+        self.callbacks = []
+        self.train_x = None
+        self.train_y = None
+
+        # Load embeddings
+        self.embedding = None
+        if metadata['language'] == 'EN':
+            self.embedding = load_embedding('cc.en.300.vec.gz', 'EN')
+        else:
+            self.embedding = load_embedding('cc.zh.300.vec.gz', 'ZH')
 
     def train(self, train_dataset, remaining_time_budget=None):
         """model training on train_dataset.
@@ -195,24 +216,70 @@ class Model(object):
         """
         if self.done_training:
             return
-        if self.x_train is None:
-            # If the preprocessed training data is not cached, preprocess it
-            x_train, y_train = train_dataset
-            x_train = preprocess_text(x_train, self.tokenizer, self.metadata['language'])
-            self.x_train = x_train
-            self.y_train = y_train
+        # If the model was not initialized
+        if self.model is None:
+            # Preprocess data
+            (self.train_x, self.train_y), self.input_info = preprocess_training_data(train_dataset, self.metadata['language'])
+            vocab_size = self.input_info['vocab_size']
+            input_length = self.input_info['max_seq_length']
+            num_classes = self.metadata['class_num']
+
+            # Build the embedding matrix of the passed vocab
+            word_index = self.input_info['tokenizer'].word_index
+            embedding_dim = len(next(iter(self.embedding.values())))
+            embedding_matrix = np.zeros((vocab_size, embedding_dim))
+            oov_count = 0
+            for word, i in word_index.items():
+                if i >= vocab_size:
+                    continue
+                vector = self.embedding.get(word)
+                if vector is not None:
+                    embedding_matrix[i] = vector
+                else:
+                    # Words not found in the embedding will be assigned to vectors of zeros
+                    embedding_matrix[i] = np.zeros(300)
+                    oov_count += 1
+            print('Embedding out of vocabulary words: {}'.format(oov_count))
+
+            # Initialize model
+            model = emb_mlp_model(vocab_size,
+                                       input_length,
+                                       num_classes,
+                                       embedding_matrix,
+                                       hidden_layer_units=[1000])
+
+            # Define optimizer and compile model
+            if num_classes == 2:
+                loss = 'binary_crossentropy'
+            else:
+                loss = 'sparse_categorical_crossentropy'
+            optimizer = Adagrad()
+            model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
+            
+            self.model = model
+        else:
+            # Load model
+            model = models.load_model(self.test_input_path + 'model.h5')
+            with open(self.test_input_path + 'tokenizer.pickle', 'rb') as handle:
+                tokenizer = pickle.load(handle, encoding='iso-8859-1')
 
         # Train model
-        history = self.model.fit(
-                    x=self.x_train,
-                    y=self.y_train,
-                    epochs=NUM_EPOCHS_PER_TRAIN,
-                    validation_split=0.2,
-                    verbose=2,  # Logs once per epoch.
-                    batch_size=BATCH_SIZE,
-                    shuffle=True)
+        history = model.fit(
+            x=self.train_x,
+            y=self.train_y,
+            epochs=NUM_EPOCHS_PER_TRAIN,
+            callbacks=self.callbacks,
+            validation_split=0.2,
+            verbose=2,  # Logs once per epoch.
+            batch_size=BATCH_SIZE,
+            shuffle=True)
+            
+        # Save model
+        model.save(self.train_output_path + 'model.h5')
+        with open(self.train_output_path + 'tokenizer.pickle', 'wb') as handle:
+            pickle.dump(self.input_info['tokenizer'], handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def test(self, x_test, remaining_time_budget=None):
+    def test(self, test_x, remaining_time_budget=None):
         """
         :param x_test: list of str, input test sentences.
         :param remaining_time_budget:
@@ -221,9 +288,28 @@ class Model(object):
                  set and `class_num` is the same as the class_num in metadata. The
                  values should be binary or in the interval [0,1].
         """
-        if self.x_test is None:
-            x_test = preprocess_text(x_test, self.tokenizer, self.metadata['language'])
-            self.x_test = x_test
+        # Load model
+        model = models.load_model(self.test_input_path + 'model.h5')
+        with open(self.test_input_path + 'tokenizer.pickle', 'rb') as handle:
+            tokenizer = pickle.load(handle, encoding='iso-8859-1')
+        num_test, num_classes = self.metadata['test_num'], self.metadata['class_num']
+        max_seq_length = self.input_info['max_seq_length']
+
+        # Clean examples' text
+        if self.metadata['language'] == 'EN':
+            test_x = clean_en_examples(test_x)
+        else:
+            test_x = clean_zh_examples(test_x)
+
+        # Tokenize and pad examples
+        test_x = tokenizer.texts_to_sequences(test_x)
+        test_x = sequence.pad_sequences(test_x, maxlen=max_seq_length)
 
         # Evaluate model
-        return self.model.predict(self.x_test)
+        result = model.predict_classes(test_x)
+
+        # Convert to one hot encoding
+        y_test = np.zeros((num_test, num_classes))
+        for idx, y in enumerate(result):
+            y_test[idx][y] = 1
+        return y_test
