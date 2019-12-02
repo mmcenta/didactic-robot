@@ -105,7 +105,11 @@ def get_bert_classifier(num_classes, language):
     input_word_ids = Input(shape=(MAX_SEQ_LENGTH,), dtype=tf.int32, name="input_word_ids")
     input_mask = Input(shape=(MAX_SEQ_LENGTH,), dtype=tf.int32, name="input_mask")
     segment_ids = Input(shape=(MAX_SEQ_LENGTH,), dtype=tf.int32, name="segment_ids")
-    inputs = [input_word_ids, input_mask, segment_ids]
+    inputs = {
+        'input_words_ids': input_word_ids, 
+        'input_mask', input_mask,
+        'segment_ids': segment_ids
+    }
 
     # Download the correct version of BERT
     if language == 'EN': 
