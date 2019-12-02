@@ -204,10 +204,11 @@ class Model(object):
         """
         if self.done_training:
             return
+        
+        x_train, y_train = train_dataset
         if self.model is None:
             # If the model was not initialized
             num_classes = self.metadata['class_num']
-            x_train, y_train = train_dataset
 
             # Get the tokenizer based on the training instances
             self.tokenizer, vocab_size, self.max_seq_length = get_tokenizer(x_train, self.metadata['language']) 
@@ -237,6 +238,7 @@ class Model(object):
                                            hidden_layer_units=[1000])
 
         if self.x_train is None:
+            # If the training instances are not cached
             self.x_train = preprocess_text(x_train, self.tokenizer, self.max_seq_length, self.metadata['language'])
         
         # Train model
@@ -259,6 +261,7 @@ class Model(object):
                  values should be binary or in the interval [0,1].
         """
         if self.x_test is None:
+            # If the test instances are not cached
             self.x_test = preprocess_text(x_test, self.tokenizer, self.max_seq_length, self.metadata['language'])
 
         # Evaluate model
