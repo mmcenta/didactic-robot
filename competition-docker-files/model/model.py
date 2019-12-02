@@ -262,4 +262,4 @@ class Model(object):
             self.x_test = preprocess_text(x_test, self.tokenizer, self.max_seq_length, self.metadata['language'])
 
         # Evaluate model
-        return model.predict(self.x_test)
+        return self.model.predict(self.x_test)
