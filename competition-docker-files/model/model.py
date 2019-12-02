@@ -226,4 +226,4 @@ class Model(object):
             self.x_test = x_test
 
         # Evaluate model
-        return self.model.predict(x_test)
+        return self.model.predict(self.x_test)
