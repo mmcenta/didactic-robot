@@ -99,7 +99,7 @@ def preprocess_text(instances, tokenizer, max_seq_length, language):
     sequences = tokenizer.texts_to_sequences(instances)
 
     # Pad sequences
-    sequences = sequence.pad_sequences(sequences)
+    sequences = sequence.pad_sequences(sequences, maxlen=max_seq_length)
 
     return sequences
 
