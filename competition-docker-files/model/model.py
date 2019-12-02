@@ -36,82 +36,72 @@ NUM_EPOCHS_PER_TRAIN = 2
 BATCH_SIZE = 32
 
 
-# Functions to clean examples both in English and Chinese. Heavily inspired on the Baseline 2.
+# Functions to clean instances both in English and Chinese. Heavily inspired on the Baseline 2.
 # Code from https://towardsdatascience.com/multi-class-text-classification-with-lstm-1590bee1bd17
-def clean_en_examples(examples):
+def clean_en_instances(instances):
     REPLACE_BY_SPACE_RE = re.compile('["/(){}\[\]\|@,;]')
     BAD_SYMBOLS_RE = re.compile('[^0-9a-zA-Z #+_]')
     tokenization_clean = lambda ex: ' '.join(jieba.cut(ex, cut_all=False))
     
     cleaned = []
-    for ex in examples:
-        ex = ex.lower()
-        ex = REPLACE_BY_SPACE_RE.sub(' ', ex)
-        ex = BAD_SYMBOLS_RE.sub('', ex)
-        ex = ex.strip()
-        cleaned.append(ex)
+    for instance in instances:
+        instance = instance.lower()
+        instance = REPLACE_BY_SPACE_RE.sub(' ', instance)
+        instance = BAD_SYMBOLS_RE.sub('', instance)
+        instance = instance.strip()
+        cleaned.append(instance)
     return cleaned
 
 
-def clean_zh_examples(examples):
+def clean_zh_instances(instances):
     REPLACE_BY_SPACE_RE = re.compile('[“”【】/（）：！～「」、|，；。"/(){}\[\]\|@,\.;]')
-    tokenization_clean = lambda ex: ' '.join(jieba.cut(ex, cut_all=False))
+    tokenization_clean = lambda instance: ' '.join(jieba.cut(instance, cut_all=False))
     
     cleaned = []
-    for ex in examples:
-        ex = REPLACE_BY_SPACE_RE.sub(' ', ex)
-        ex = ex.strip()
-        cleaned.append(tokenization_clean(ex))
+    for instance in instances:
+        instance = REPLACE_BY_SPACE_RE.sub(' ', instance)
+        instance = instance.strip()
+        cleaned.append(tokenization_clean(instance))
     return cleaned
 
 
-def preprocess_training_data(raw_data, language):
-    """Preprocesses training data in both English and Chinese.
-
-    This functions first cleans the text data, then fits a tokenizer on the cleaned examples.
-
-    Args:
-        raw_data: A tuple of (examples, labels) on which the model will train.
-        language: The language of the text. 'EN' for English and 'ZN' for Chinese.
-
-    Returns:
-        A tuple of (sequences, labels) in which sequences are the preprocessed examples.
-        A dictionary containing additional information on the preprocessing. It contains the following keys:
-            'tokenizer': The preprocessing.text.Tokenizer object used to fit the examples.
-            'vocab_size': The size of the vocabulary fitted on the examples.
-            'max_seq_length': The maximum length of all sequences. 
-    """
-    examples, labels = raw_data
-
-    # Clean examples' text
+def get_tokenizer(instances, language):
+    # Clean text
     if language == 'EN':
-        examples = clean_en_examples(examples)
+        instances = clean_en_instances(instances)
     else:
-        examples = clean_zh_examples(examples)
+        instances = clean_zh_instances(instances)
 
-    # Create a tokenizer on the examples corpus
+    # Create a tokenizer on the instances corpus
     tokenizer = text.Tokenizer(num_words=MAX_VOCAB_SIZE)
-    tokenizer.fit_on_texts(examples)
-    sequences = tokenizer.texts_to_sequences(examples)
+    tokenizer.fit_on_texts(instances)
+    sequences = tokenizer.texts_to_sequences(instances)
 
     # Get the maximum length on these sequences
     max_seq_length = len(max(sequences, key=len))
     if max_seq_length > MAX_SEQ_LENGTH:
         max_seq_length = MAX_SEQ_LENGTH
-    
-    # Pad the sequences to the maximum length
-    sequences = sequence.pad_sequences(sequences, maxlen=max_seq_length)
-    
-    # Convert one hot encoding labels to categorical labels
-    labels = np.argmax(labels, axis=1)
 
-    # Create an dictionary to hold additional information
-    info = {}
-    info['tokenizer'] = tokenizer
-    info['vocab_size'] = min(len(tokenizer.word_index) + 1, MAX_VOCAB_SIZE)
-    info['max_seq_length'] = max_seq_length
+    # Get the vocab size
+    vocab_size = min(len(tokenizer.word_index) + 1, MAX_VOCAB_SIZE)
+    
+    return tokenizer, vocab_size, max_seq_length
 
-    return (sequences, labels), info
+
+def preprocess_text(instances, tokenizer, max_seq_length, language):
+    # Clean text
+    if language == 'EN':
+        instances = clean_en_instances(instances)
+    else:
+        instances = clean_zh_instances(instances)
+
+    # Apply tokenizer to text
+    sequences = tokenizer.texts_to_sequences(instances)
+
+    # Pad sequences
+    sequences = sequence.pad_sequences(sequences)
+
+    return sequences
 
 
 def load_embedding(embedding_file, language):
@@ -135,13 +125,12 @@ def load_embedding(embedding_file, language):
         return embedding
 
 
-def emb_mlp_model(vocab_size,
-                  input_length,
-                  num_classes,
-                  embedding_matrix,
-                  hidden_layer_units,
-                  dropout_rate=0.5):
-
+def get_emb_mlp_model(vocab_size,
+                    input_length,
+                    num_classes,
+                    embedding_matrix,
+                    hidden_layer_units,
+                    dropout_rate=0.5):
     embedding_dim = embedding_matrix.shape[1]
     
     # Instantiate model and embedding layer
@@ -158,13 +147,12 @@ def emb_mlp_model(vocab_size,
         model.add(Dense(num_units, activation='relu'))
 
     # Add the final layer
-    last_units, last_activation = None, None
-    if num_classes == 2:
-        last_units, last_activation = 1, 'sigmoid'
-    else:
-        last_units, last_activation = num_classes, 'softmax'
     model.add(Dropout(rate=dropout_rate))
-    model.add(Dense(last_units, activation=last_activation))
+    model.add(Dense(num_classes, activation='softmax'))
+
+    # Compile model
+    optimizer = Adagrad()
+    model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
 
     return model
 
@@ -190,11 +178,11 @@ class Model(object):
         self.test_input_path = test_input_path
 
         # Added attributes
-        self.input_info = None
+        self.max_seq_length = None
+        self.tokenizer = None
         self.model = None
-        self.callbacks = []
-        self.train_x = None
-        self.train_y = None
+        self.x_train = None
+        self.x_test = None
 
         # Load embeddings
         self.embedding = None
@@ -209,23 +197,23 @@ class Model(object):
         :param train_dataset: tuple, (x_train, y_train)
             x_train: list of str, input training sentences.
             y_train: A `numpy.ndarray` matrix of shape (sample_count, class_num).
-                     here `sample_count` is the number of examples in this dataset as train
+                     here `sample_count` is the number of instances in this dataset as train
                      set and `class_num` is the same as the class_num in metadata. The
                      values should be binary.
         :param remaining_time_budget:
         """
         if self.done_training:
             return
-        # If the model was not initialized
         if self.model is None:
-            # Preprocess data
-            (self.train_x, self.train_y), self.input_info = preprocess_training_data(train_dataset, self.metadata['language'])
-            vocab_size = self.input_info['vocab_size']
-            input_length = self.input_info['max_seq_length']
+            # If the model was not initialized
             num_classes = self.metadata['class_num']
+            x_train, y_train = train_dataset
 
-            # Build the embedding matrix of the passed vocab
-            word_index = self.input_info['tokenizer'].word_index
+            # Get the tokenizer based on the training instances
+            self.tokenizer, vocab_size, self.max_seq_length = get_tokenizer(x_train, self.metadata['language']) 
+
+            # Build the embedding matrix of the vocab
+            word_index = self.tokenizer.word_index
             embedding_dim = len(next(iter(self.embedding.values())))
             embedding_matrix = np.zeros((vocab_size, embedding_dim))
             oov_count = 0
@@ -242,74 +230,36 @@ class Model(object):
             print('Embedding out of vocabulary words: {}'.format(oov_count))
 
             # Initialize model
-            model = emb_mlp_model(vocab_size,
-                                       input_length,
-                                       num_classes,
-                                       embedding_matrix,
-                                       hidden_layer_units=[1000])
+            self.model = get_emb_mlp_model(vocab_size,
+                                           self.max_seq_length,
+                                           num_classes,
+                                           embedding_matrix,
+                                           hidden_layer_units=[1000])
 
-            # Define optimizer and compile model
-            if num_classes == 2:
-                loss = 'binary_crossentropy'
-            else:
-                loss = 'sparse_categorical_crossentropy'
-            optimizer = Adagrad()
-            model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
-            
-            self.model = model
-        else:
-            # Load model
-            model = models.load_model(self.test_input_path + 'model.h5')
-            with open(self.test_input_path + 'tokenizer.pickle', 'rb') as handle:
-                tokenizer = pickle.load(handle, encoding='iso-8859-1')
-
+        if self.x_train is None:
+            self.x_train = preprocess_text(x_train, self.tokenizer, self.max_seq_length, self.metadata['language'])
+        
         # Train model
         history = model.fit(
-            x=self.train_x,
-            y=self.train_y,
+            x=self.x_train,
+            y=y_train,
             epochs=NUM_EPOCHS_PER_TRAIN,
-            callbacks=self.callbacks,
             validation_split=0.2,
             verbose=2,  # Logs once per epoch.
             batch_size=BATCH_SIZE,
             shuffle=True)
             
-        # Save model
-        model.save(self.train_output_path + 'model.h5')
-        with open(self.train_output_path + 'tokenizer.pickle', 'wb') as handle:
-            pickle.dump(self.input_info['tokenizer'], handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    def test(self, test_x, remaining_time_budget=None):
+    def test(self, x_test, remaining_time_budget=None):
         """
         :param x_test: list of str, input test sentences.
         :param remaining_time_budget:
         :return: A `numpy.ndarray` matrix of shape (sample_count, class_num).
-                 here `sample_count` is the number of examples in this dataset as test
+                 here `sample_count` is the number of instances in this dataset as test
                  set and `class_num` is the same as the class_num in metadata. The
                  values should be binary or in the interval [0,1].
         """
-        # Load model
-        model = models.load_model(self.test_input_path + 'model.h5')
-        with open(self.test_input_path + 'tokenizer.pickle', 'rb') as handle:
-            tokenizer = pickle.load(handle, encoding='iso-8859-1')
-        num_test, num_classes = self.metadata['test_num'], self.metadata['class_num']
-        max_seq_length = self.input_info['max_seq_length']
-
-        # Clean examples' text
-        if self.metadata['language'] == 'EN':
-            test_x = clean_en_examples(test_x)
-        else:
-            test_x = clean_zh_examples(test_x)
-
-        # Tokenize and pad examples
-        test_x = tokenizer.texts_to_sequences(test_x)
-        test_x = sequence.pad_sequences(test_x, maxlen=max_seq_length)
+        if self.x_test is None:
+            self.x_test = preprocess_text(x_test, self.tokenizer, self.max_seq_length, self.metadata['langauge'])
 
         # Evaluate model
-        result = model.predict_classes(test_x)
-
-        # Convert to one hot encoding
-        y_test = np.zeros((num_test, num_classes))
-        for idx, y in enumerate(result):
-            y_test[idx][y] = 1
-        return y_test
+        return model.predict(self.x_test)
