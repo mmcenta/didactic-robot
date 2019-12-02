@@ -115,7 +115,7 @@ def preprocess_text(instances, tokenizer, language):
     return [input_word_ids, input_masks, segment_ids]
 
 
-def get_bert_classifier(num_classes, language, dropout_rate):
+def get_bert_classifier(num_classes, language, dropout_rate=0.5):
     """Returns a BERT-based classifier using Keras Functional API"""
 
     # Create the Input objects
