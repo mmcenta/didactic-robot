@@ -115,7 +115,7 @@ def preprocess_text(instances, tokenizer, language):
         segment_ids.append(np.zeros(MAX_SEQ_LENGTH))
         input_word_ids.append(get_ids(tokens, tokenizer))
     
-    return [[input_word_ids], [input_masks], [segment_ids]]
+    return [input_word_ids, input_masks, segment_ids]
 
 
 def get_bert_classifier(num_classes, language):
