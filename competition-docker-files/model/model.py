@@ -222,7 +222,7 @@ class Model(object):
                  values should be binary or in the interval [0,1].
         """
         if self.x_test is None:
-            x_test = preprocess_text(x_test, self.tokenizer, metadata['language'])
+            x_test = preprocess_text(x_test, self.tokenizer, self.metadata['language'])
             self.x_test = x_test
 
         # Evaluate model
