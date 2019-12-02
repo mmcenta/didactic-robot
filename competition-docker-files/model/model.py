@@ -259,7 +259,7 @@ class Model(object):
                  values should be binary or in the interval [0,1].
         """
         if self.x_test is None:
-            self.x_test = preprocess_text(x_test, self.tokenizer, self.max_seq_length, self.metadata['langauge'])
+            self.x_test = preprocess_text(x_test, self.tokenizer, self.max_seq_length, self.metadata['language'])
 
         # Evaluate model
         return model.predict(self.x_test)
