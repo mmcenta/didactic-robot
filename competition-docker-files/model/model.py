@@ -221,8 +221,9 @@ class Model(object):
                  set and `class_num` is the same as the class_num in metadata. The
                  values should be binary or in the interval [0,1].
         """
-        # Preprocess data
-        x_test = preprocess_text(x_test, self.tokenizer, metadata['language'])
+        if self.x_test is None:
+            x_test = preprocess_text(x_test, self.tokenizer, metadata['language'])
+            self.x_test = x_test
 
         # Evaluate model
         return self.model.predict_classes(x_test)
