@@ -32,7 +32,7 @@ set_session(sess)  # set this TensorFlow session as the default session for Kera
 EMBEDDINGS_DIR = "/app/embedding"
 MAX_SEQ_LENGTH = 500
 MAX_VOCAB_SIZE = 20000 # Limit on the number of features. We use the top 20K features
-NUM_EPOCHS_PER_TRAIN = 1
+NUM_EPOCHS = 100
 BATCH_SIZE = 32
 
 
@@ -245,11 +245,14 @@ class Model(object):
         history = self.model.fit(
             x=self.x_train,
             y=y_train,
-            epochs=NUM_EPOCHS_PER_TRAIN,
+            epochs=NUM_EPOCHS,
+            callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10)],
             validation_split=0.2,
             verbose=2,  # Logs once per epoch.
             batch_size=BATCH_SIZE,
             shuffle=True)
+
+        self.done_training = True
             
     def test(self, x_test, remaining_time_budget=None):
         """
