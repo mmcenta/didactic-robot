@@ -181,13 +181,16 @@ class Model(object):
             # If the preprocessed training data is not cached, preprocess it
             x_train, y_train = train_dataset
             x_train = preprocess_examples(x_train, self.tokenizer, self.metadata['language'])
-            self.x_train, self.y_train = x_train, y_train
+            self.x_train = {
+                'input_word_ids': x_train,
+                'input_mask': self.input_mask,
+                'segment_ids': self.segment_ids
+            }
+            self.y_train = y_train
 
         # Train model
-        print(self.input_mask.shape)
-        print(self.segment_ids.shape)
         history = self.model.fit(
-                    x=[self.x_train, self.input_mask, self.segment_ids],
+                    x=self.x_train,
                     y=self.y_train,
                     epochs=NUM_EPOCHS_PER_TRAIN,
                     validation_split=0.2,
@@ -206,6 +209,11 @@ class Model(object):
         """
         # Preprocess data
         x_test = preprocess_examples(x_test, self.tokenizer, metadata['language'])
+        x_test = {
+            'input_word_ids': x_test,
+            'input_mask': self.input_mask,
+            'segment_ids': self.segment_ids
+        }
 
         # Evaluate model
-        return self.model.predict_classes([x_test, self.input_mask, self.segment_ids])
+        return self.model.predict_classes(x_test)
