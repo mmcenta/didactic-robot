@@ -160,6 +160,8 @@ class Model(object):
         self.model, vocab, do_lowercase = get_bert_classifier(metadata['class_num'],
                                                               metadata['language'])
         self.tokenizer = FullTokenizer(vocab, do_lowercase)
+        self.input_mask = tf.zeros((MAX_SEQ_LENGTH,))
+        self.segment_ids = tf.zeros((MAX_SEQ_LENGTH,))
         
 
     def train(self, train_dataset, remaining_time_budget=None):
@@ -183,7 +185,7 @@ class Model(object):
 
         # Train model
         history = self.model.fit(
-                    x=self.x_train,
+                    x=[self.x_train, self.input_mask, self.segment_ids],
                     y=self.y_train,
                     epochs=NUM_EPOCHS_PER_TRAIN,
                     validation_split=0.2,
@@ -204,4 +206,4 @@ class Model(object):
         x_test = preprocess_examples(x_test, self.tokenizer, metadata['language'])
 
         # Evaluate model
-        return self.model.predict_classes(x_test)
+        return self.model.predict_classes([x_test, self.input_mask, self.segment_ids])
