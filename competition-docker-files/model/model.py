@@ -240,7 +240,7 @@ class Model(object):
             self.x_train = preprocess_text(x_train, self.tokenizer, self.max_seq_length, self.metadata['language'])
         
         # Train model
-        history = model.fit(
+        history = self.model.fit(
             x=self.x_train,
             y=y_train,
             epochs=NUM_EPOCHS_PER_TRAIN,
