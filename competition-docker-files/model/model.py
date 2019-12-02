@@ -14,13 +14,10 @@ import sys, getopt
 import tensorflow as tf
 import tensorflow_hub as hub
 from tensorflow.keras import models
-from tensorflow.keras import models
-from tensorflow.keras.layers import Input
-from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Input, Dense, Dropout
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.initializers import Constant
-from tensorflow.keras.preprocessing import text
-from tensorflow.keras.preprocessing import sequence
+from tensorflow.keras.preprocessing import text, sequence
 
 from bert_tokenization import FullTokenizer
 
@@ -118,7 +115,7 @@ def preprocess_text(instances, tokenizer, language):
     return [input_word_ids, input_masks, segment_ids]
 
 
-def get_bert_classifier(num_classes, language):
+def get_bert_classifier(num_classes, language, dropout_rate):
     """Returns a BERT-based classifier using Keras Functional API"""
 
     # Create the Input objects
@@ -133,13 +130,14 @@ def get_bert_classifier(num_classes, language):
     else:
         bert_layer = hub.KerasLayer(BERT_ZH_URL, trainable=False)
 
-    # Apply the BERT layer
-    _, seq_output = bert_layer(inputs) 
+    # Apply the BERT layer and the dropout
+    text_features, _ = bert_layer(inputs)
+    text_features = Dropout(rate=dropout_rate)(text_features)
 
-    # Instantiate and apply the classifier layer
-    classifier_layer = Dense(num_classes, activation='softmax')
-    predictions = classifier_layer(seq_output)
+    # Apply the classifier layer
+    predictions = Dense(num_classes, activation='softmax')(text_features)
 
+    # Define the model
     model = tf.keras.Model(inputs=inputs, outputs=predictions, name='bert-classifier')
 
     # Compile model
