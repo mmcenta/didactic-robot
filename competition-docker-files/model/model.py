@@ -68,7 +68,24 @@ def clean_zh_examples(examples):
     return cleaned
 
 
-def preprocess_examples(examples, tokenizer, language):
+def get_mask(tokens):
+    """Mask for padding"""
+    if len(tokens) > MAX_SEQ_LENGTH:
+        return np.ones(MAX_SEQ_LENGTH)
+    return np.array([1] * len(tokens) + [0] * (MAX_SEQ_LENGTH - len(tokens)))
+
+
+def get_ids(tokens, tokenizer):
+    """Token ids from Tokenizer vocab"""
+    token_ids = tokenizer.convert_tokens_to_ids(tokens)
+    if len(token_ids) > MAX_SEQ_LENGTH:
+        input_ids = token_ids[:MAX_SEQ_LENGTH]
+    else:
+        input_ids = token_ids + [0] * (MAX_SEQ_LENGTH - len(token_ids))
+    return np.array(input_ids)
+
+
+def preprocess_text(instances, tokenizer, language):
     """Preprocesses data in both English and Chinese.
 
     This functions first cleans the text data, then applies the received tokenizer on the cleaned examples.
@@ -83,19 +100,22 @@ def preprocess_examples(examples, tokenizer, language):
     """
     # Clean text
     if language == 'EN':
-        examples = clean_en_examples(examples)
+        instances = clean_en_examples(instances)
     else:
-        examples = clean_zh_examples(examples)
+        instances = clean_zh_examples(instances)
 
     # Apply tokenizer to text
-    sequences = []
-    for example in examples:
-        sequences.append(tokenizer.convert_tokens_to_ids(tokenizer.tokenize(example)))
-
-    # Pad the sequences to the maximum length
-    sequences = sequence.pad_sequences(sequences, maxlen=MAX_SEQ_LENGTH)
+    input_word_ids = []
+    input_masks = []
+    segment_ids = []
+    for instance in instances:
+        tokens = tokenizer.tokenize(instance)
+        tokens = ["[CLS]"] + tokens + ["[SEP]"]
+        input_masks.append(get_mask(tokens))
+        segment_ids.append(np.zeros(MAX_SEQ_LENGTH))
+        input_word_ids.append(get_ids(tokens, tokenizer))
     
-    return sequences
+    return [[input_word_ids], [input_masks], [segment_ids]]
 
 
 def get_bert_classifier(num_classes, language):
@@ -105,11 +125,7 @@ def get_bert_classifier(num_classes, language):
     input_word_ids = Input(shape=(MAX_SEQ_LENGTH,), dtype=tf.int32, name="input_word_ids")
     input_mask = Input(shape=(MAX_SEQ_LENGTH,), dtype=tf.int32, name="input_mask")
     segment_ids = Input(shape=(MAX_SEQ_LENGTH,), dtype=tf.int32, name="segment_ids")
-    inputs = {
-        'input_words_ids': input_word_ids, 
-        'input_mask': input_mask,
-        'segment_ids': segment_ids
-    }
+    inputs = [input_word_ids, input_mask, segment_ids]
 
     # Download the correct version of BERT
     if language == 'EN': 
@@ -184,12 +200,8 @@ class Model(object):
         if self.x_train is None:
             # If the preprocessed training data is not cached, preprocess it
             x_train, y_train = train_dataset
-            x_train = preprocess_examples(x_train, self.tokenizer, self.metadata['language'])
-            self.x_train = {
-                'input_word_ids': x_train,
-                'input_mask': self.input_mask,
-                'segment_ids': self.segment_ids
-            }
+            x_train = preprocess_text(x_train, self.tokenizer, self.metadata['language'])
+            self.x_train = x_train
             self.y_train = y_train
 
         # Train model
@@ -212,12 +224,7 @@ class Model(object):
                  values should be binary or in the interval [0,1].
         """
         # Preprocess data
-        x_test = preprocess_examples(x_test, self.tokenizer, metadata['language'])
-        x_test = {
-            'input_word_ids': x_test,
-            'input_mask': self.input_mask,
-            'segment_ids': self.segment_ids
-        }
+        x_test = preprocess_text(x_test, self.tokenizer, metadata['language'])
 
         # Evaluate model
         return self.model.predict_classes(x_test)
