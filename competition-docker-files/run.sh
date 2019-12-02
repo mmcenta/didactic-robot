@@ -1,2 +1,3 @@
 #!/usr/bin/env bash
-python run_local_test.py -dataset_dir=./datasets/sample -code_dir=./model
+pip install --upgrade tensorflow-hub
+python run_local_test.py -dataset_dir=./datasets/3 -code_dir=./model
