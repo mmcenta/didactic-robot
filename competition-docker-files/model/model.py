@@ -23,8 +23,8 @@ from bert_tokenization import FullTokenizer
 
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True  # dynamically grow the memory used on the GPU
-config.log_device_placement = True  # to log device placement (on which device the operation ran)
-                                    # (nothing gets printed in Jupyter, only if you run it standalone)
+config.log_device_placement = False  # to log device placement (on which device the operation ran)
+                                     # (becomes difficult to follow on BERT)
 tf.enable_eager_execution(config=config)
 
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
