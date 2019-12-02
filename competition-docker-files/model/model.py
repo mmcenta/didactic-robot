@@ -32,7 +32,7 @@ print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('
 BERT_EN_URL = "https://tfhub.dev/tensorflow/bert_en_uncased_L-12_H-768_A-12/1"
 BERT_ZH_URL = "https://tfhub.dev/tensorflow/bert_zh_L-12_H-768_A-12/1"
 MAX_SEQ_LENGTH = 500
-NUM_EPOCHS_PER_TRAIN = 2
+NUM_EPOCHS_PER_TRAIN = 1
 BATCH_SIZE = 32
 
 
