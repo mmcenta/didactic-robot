@@ -6,10 +6,14 @@ I have a [Trello Board](https://trello.com/b/mPoXjG5t/helpful-bookworm) which co
 
 ## About this repository
 
-A explanation of the directories is below:
+An explanation of the directories is below:
 
 * `/baselines`: contains the baseline models provided by the competition organizer themselves.
 * `/competition-docker-files`: contains the testing files that should be mounted on the docker image for scoring. These files were provided by the competition organizers and their usage is described in the README.md that is inside.
+* `/docs`: contains documents related to this repository.
 * `/models`: contains the models I created for the competition.
 * `/papers`: contains a series of papers I used as inspiration for tackling this challenge.
 * `/scheduler`: contains a scheduler class that is responsible for deciding when to train and when to test.
+* `/utils`: contains Python files I found useful while developing the models.
+
+For more information about the experiments, read the [report](docs/report.md).
