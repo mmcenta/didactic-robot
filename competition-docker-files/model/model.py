@@ -184,6 +184,8 @@ class Model(object):
             self.x_train, self.y_train = x_train, y_train
 
         # Train model
+        print(self.input_mask.shape)
+        print(self.segment_ids.shape)
         history = self.model.fit(
                     x=[self.x_train, self.input_mask, self.segment_ids],
                     y=self.y_train,
