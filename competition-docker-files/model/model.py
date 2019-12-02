@@ -107,7 +107,7 @@ def get_bert_classifier(num_classes, language):
     segment_ids = Input(shape=(MAX_SEQ_LENGTH,), dtype=tf.int32, name="segment_ids")
     inputs = {
         'input_words_ids': input_word_ids, 
-        'input_mask', input_mask,
+        'input_mask': input_mask,
         'segment_ids': segment_ids
     }
 
