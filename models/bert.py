@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 import os
 import gzip
 import argparse
@@ -5,35 +8,31 @@ import time
 import re
 import jieba
 import pickle
-import keras
 import tensorflow as tf
 import numpy as np
 import sys, getopt
 import tensorflow as tf
 import tensorflow_hub as hub
-from keras import models
-from keras.layers import Input
-from keras.layers import Dense
-from keras.optimizers import Adam
-from keras.initializers import Constant
-from keras.preprocessing import text
-from keras.preprocessing import sequence
+from tensorflow.keras import models
+from tensorflow.keras.layers import Input, Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.initializers import Constant
+from tensorflow.keras.preprocessing import text, sequence
 
-from .bert_tokenization import FullTokenizer
+from bert_tokenization import FullTokenizer
 
-
-from keras.backend.tensorflow_backend import set_session
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True  # dynamically grow the memory used on the GPU
-config.log_device_placement = True  # to log device placement (on which device the operation ran)
-                                    # (nothing gets printed in Jupyter, only if you run it standalone)
-sess = tf.Session(config=config)
-set_session(sess)  # set this TensorFlow session as the default session for Keras
+config.log_device_placement = False  # to log device placement (on which device the operation ran)
+                                     # (becomes difficult to follow on BERT)
+tf.enable_eager_execution(config=config)
+
+print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 
 BERT_EN_URL = "https://tfhub.dev/tensorflow/bert_en_uncased_L-12_H-768_A-12/1"
 BERT_ZH_URL = "https://tfhub.dev/tensorflow/bert_zh_L-12_H-768_A-12/1"
 MAX_SEQ_LENGTH = 500
-NUM_EPOCHS_PER_TRAIN = 2
+NUM_EPOCHS_PER_TRAIN = 1
 BATCH_SIZE = 32
 
 
@@ -66,7 +65,24 @@ def clean_zh_examples(examples):
     return cleaned
 
 
-def preprocess_examples(examples, tokenizer, language):
+def get_mask(tokens):
+    """Mask for padding"""
+    if len(tokens) > MAX_SEQ_LENGTH:
+        return np.ones(MAX_SEQ_LENGTH)
+    return np.array([1] * len(tokens) + [0] * (MAX_SEQ_LENGTH - len(tokens)))
+
+
+def get_ids(tokens, tokenizer):
+    """Token ids from Tokenizer vocab"""
+    token_ids = tokenizer.convert_tokens_to_ids(tokens)
+    if len(token_ids) > MAX_SEQ_LENGTH:
+        input_ids = token_ids[:MAX_SEQ_LENGTH]
+    else:
+        input_ids = token_ids + [0] * (MAX_SEQ_LENGTH - len(token_ids))
+    return np.array(input_ids)
+
+
+def preprocess_text(instances, tokenizer, language):
     """Preprocesses data in both English and Chinese.
 
     This functions first cleans the text data, then applies the received tokenizer on the cleaned examples.
@@ -81,20 +97,25 @@ def preprocess_examples(examples, tokenizer, language):
     """
     # Clean text
     if language == 'EN':
-        examples = clean_en_examples(examples)
+        instances = clean_en_examples(instances)
     else:
-        examples = clean_zh_examples(examples)
+        instances = clean_zh_examples(instances)
 
     # Apply tokenizer to text
-    sequences = tokenizer.tokenize(examples)
-
-    # Pad the sequences to the maximum length
-    sequences = sequence.pad_sequences(sequences, maxlen=MAX_SEQ_LENGTH)
+    input_word_ids = []
+    input_masks = []
+    segment_ids = []
+    for instance in instances:
+        tokens = tokenizer.tokenize(instance)
+        tokens = ["[CLS]"] + tokens + ["[SEP]"]
+        input_masks.append(get_mask(tokens))
+        segment_ids.append(np.zeros(MAX_SEQ_LENGTH))
+        input_word_ids.append(get_ids(tokens, tokenizer))
     
-    return sequences
+    return [input_word_ids, input_masks, segment_ids]
 
 
-def get_bert_classifier(num_classes, language):
+def get_bert_classifier(num_classes, language, dropout_rate=0.5):
     """Returns a BERT-based classifier using Keras Functional API"""
 
     # Create the Input objects
@@ -109,14 +130,15 @@ def get_bert_classifier(num_classes, language):
     else:
         bert_layer = hub.KerasLayer(BERT_ZH_URL, trainable=False)
 
-    # Apply the BERT layer
-    _, seq_output = bert_layer(inputs) 
+    # Apply the BERT layer and the dropout
+    text_features, _ = bert_layer(inputs)
+    text_features = Dropout(rate=dropout_rate)(text_features)
 
-    # Instantiate and apply the classifier layer
-    classifier_layer = Dense(num_classes, activation='softmax')
-    predictions = classifier_layer(seq_output)
+    # Apply the classifier layer
+    predictions = Dense(num_classes, activation='softmax')(text_features)
 
-    model = keras.Model(input=inputs, outputs=predictions, name='bert-classifier')
+    # Define the model
+    model = tf.keras.Model(inputs=inputs, outputs=predictions, name='bert-classifier')
 
     # Compile model
     optimizer = Adam(amsgrad=True)
@@ -148,11 +170,16 @@ class Model(object):
         self.metadata = metadata
         self.train_output_path = train_output_path
         self.test_input_path = test_input_path
+        self.x_train = None
+        self.y_train = None
+        self.x_test = None
 
         # Initialize model
         self.model, vocab, do_lowercase = get_bert_classifier(metadata['class_num'],
                                                               metadata['language'])
         self.tokenizer = FullTokenizer(vocab, do_lowercase)
+        self.input_mask = tf.zeros((MAX_SEQ_LENGTH,))
+        self.segment_ids = tf.zeros((MAX_SEQ_LENGTH,))
         
 
     def train(self, train_dataset, remaining_time_budget=None):
@@ -168,15 +195,17 @@ class Model(object):
         """
         if self.done_training:
             return
-        x_train, y_train = train_dataset
-
-        # Preprocess data
-        x_train = preprocess_examples(x_train, self.tokenizer, self.metadata['language'])
+        if self.x_train is None:
+            # If the preprocessed training data is not cached, preprocess it
+            x_train, y_train = train_dataset
+            x_train = preprocess_text(x_train, self.tokenizer, self.metadata['language'])
+            self.x_train = x_train
+            self.y_train = y_train
 
         # Train model
         history = self.model.fit(
-                    x=self.train_x,
-                    y=self.train_y,
+                    x=self.x_train,
+                    y=self.y_train,
                     epochs=NUM_EPOCHS_PER_TRAIN,
                     validation_split=0.2,
                     verbose=2,  # Logs once per epoch.
@@ -192,8 +221,9 @@ class Model(object):
                  set and `class_num` is the same as the class_num in metadata. The
                  values should be binary or in the interval [0,1].
         """
-        # Preprocess data
-        x_test = preprocess_examples(x_test, self.tokenizer, metadata['language'])
+        if self.x_test is None:
+            x_test = preprocess_text(x_test, self.tokenizer, self.metadata['language'])
+            self.x_test = x_test
 
         # Evaluate model
-        return self.model.predict_classes(x_test)
+        return self.model.predict(self.x_test)
